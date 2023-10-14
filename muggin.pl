@@ -13,10 +13,7 @@ parse(Chars, Template) :-
 
 template(Template) --> element(0,Template).
 
-%tagname_([]) --> [].
-%tagname_([C|Cs]) --> [C], { char_type(C, alpha) }, tagname_(Cs). % FIXME: allow dash for custom elements
-%tagname(N) --> tagname_(Cs), { atom_chars(N, Cs), length(Cs, Len), Len > 0 }.
-tagname(N) --> string_without(" .#(\n", Cs), { atom_chars(N, Cs), length(Cs,Len), Len > 0 }.
+tagname(N) --> string_without(" .#(=\n", Cs), { atom_chars(N, Cs), length(Cs,Len), Len > 0 }.
 
 varname(N) --> [FirstChar], { char_type(FirstChar, csymf) }, varname_(Cs), { atom_chars(N, [FirstChar|Cs]) }.
 varname_([]) --> [].
@@ -31,13 +28,13 @@ ws1 --> [W], { char_type(W, space) }, ws.
 
 nl --> [C], { char_type(C, end_of_line) }.
 
-attributes([]) --> [].
+
 attributes([Attr|Attrs]) --> attribute(Attr), more_attributes(Attrs).
-more_attributes([]) --> [].
-more_attributes([Attrs]) --> ws, attributes(Attrs).
+more_attributes([]) --> ws.
+more_attributes(Attrs) --> ws, attributes(Attrs).
 attribute(Name-Value) --> tagname(Name), "=", expr(Value).
 
-expr(str(Value)) --> "\"", string_without("\"", Value), "\"".
+expr(text(Value)) --> "\"", string_without("\"", Value), "\"".
 expr(var(Name)) --> varname(Name).
 
 element(Ind,element(Name,Attrs,Content)) -->
@@ -109,4 +106,9 @@ test(pipe_text_and_elt) :- pc("div\n  | stuff\n  ul\n    li", div,
                               [text("stuff"), element(ul, [], [element(li,[],[])])]).
 test(content_after) :- pc("div with content", div, [text("with content")]).
 test(id_and_content_after) :- pac("div#foo bar", div, [id-"foo"], [text("bar")]).
+
+test(attrs1) :- pa("div(onclick=\"alert('foo')\")", div, [onclick-text("alert('foo')")]).
+test(attrs2) :- pac("div(style=\"width:10vw;\" id=foo) hello", div,
+                    [style-text("width:10vw;"), id-var(foo)],
+                    [text("hello")]).
 :- end_tests(muggin).
