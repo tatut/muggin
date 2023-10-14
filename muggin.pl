@@ -2,17 +2,21 @@
 :- use_module(library(dcg/basics)).
 :- set_prolog_flag(double_quotes, chars).
 
-% parse state is a compound term
-% s(IndentLevel)
 
 parse(Chars, Template) :-
-    phrase(template(Template), Chars).
+    last(Chars, '\n'),
+    phrase(template(Template), Chars), !.
+parse(Chars, Template) :-
+    \+ last(Chars, '\n'),
+    append(Chars, "\n", CharsNl),
+    parse(CharsNl, Template).
 
 template(Template) --> element(0,Template).
 
-tagname_([]) --> [].
-tagname_([C|Cs]) --> [C], { char_type(C, alpha) }, tagname_(Cs). % FIXME: allow dash for custom elements
-tagname(N) --> tagname_(Cs), { atom_chars(N, Cs), length(Cs, Len), Len > 0 }.
+%tagname_([]) --> [].
+%tagname_([C|Cs]) --> [C], { char_type(C, alpha) }, tagname_(Cs). % FIXME: allow dash for custom elements
+%tagname(N) --> tagname_(Cs), { atom_chars(N, Cs), length(Cs, Len), Len > 0 }.
+tagname(N) --> string_without(" .#(\n", Cs), { atom_chars(N, Cs), length(Cs,Len), Len > 0 }.
 
 varname(N) --> [FirstChar], { char_type(FirstChar, csymf) }, varname_(Cs), { atom_chars(N, [FirstChar|Cs]) }.
 varname_([]) --> [].
@@ -44,6 +48,7 @@ element(Ind,element(Name,AllAttrs,Content)) -->
     { append(IdClassAttrs, Attrs, AllAttrs) }, content(Ind, Content).
 
 content(_, []) --> ws.
+content(_, [text(Txt)]) --> ws1, string_without("\n", Txt), nl.
 content(Ind, Children) -->
     ws, nl,
     { Ind1 is Ind + 2 },
@@ -85,13 +90,14 @@ spaces(N) --> " ", { N > 0, N1 is N - 1 }, spaces(N1).
 :- set_prolog_flag(double_quotes, chars).
 :- use_module(muggin).
 
-test(simple_element) :-
-    parse("div", element(div, [], [])).
-
 % Short hand for parsing element with attrs only
 pa(Chars, Tag, Attrs) :- parse(Chars, element(Tag, Attrs, [])).
 % Short hand for parsing element with content only
 pc(Chars, Tag, Content) :- parse(Chars, element(Tag, [], Content)).
+% Short hand for parsing element with attrs and content
+pac(Chars, Tag, Attrs, Content) :- parse(Chars, element(Tag, Attrs, Content)).
+
+test(simple_element) :- pa("div", div, []).
 
 test(element_w_id) :- pa("div#app\n", div, [id-"app"]).
 test(element_w_class) :- pa("div.stylish", div, [class-"stylish"]).
@@ -101,4 +107,6 @@ test(element_w_classes) :- pa("div.a.b.c", div, [class-"a b c"]).
 test(pipe_text) :- pc("div\n  | this is my content\n", div, [text("this is my content")]).
 test(pipe_text_and_elt) :- pc("div\n  | stuff\n  ul\n    li", div,
                               [text("stuff"), element(ul, [], [element(li,[],[])])]).
+test(content_after) :- pc("div with content", div, [text("with content")]).
+test(id_and_content_after) :- pac("div#foo bar", div, [id-"foo"], [text("bar")]).
 :- end_tests(muggin).
