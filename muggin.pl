@@ -15,7 +15,7 @@ parse(Chars, Template) :-
 
 template(Template) --> element(0,Template).
 
-tagname(N) --> string_without(" .#(=\n|", Cs), { atom_chars(N, Cs), length(Cs,Len), Len > 0 }.
+tagname(N) --> string_without(" .#(=\n|<>&", Cs), { atom_chars(N, Cs), length(Cs,Len), Len > 0 }.
 
 varname(N) --> [FirstChar], { char_type(FirstChar, csymf) }, varname_(Cs), { atom_chars(N, [FirstChar|Cs]) }.
 varname_([]) --> [].
