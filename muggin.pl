@@ -1,7 +1,9 @@
-:- module(muggin, [parse/2]).
+:- module(muggin, [parse/2, render/1, render/2]).
 :- use_module(library(dcg/basics)).
 :- set_prolog_flag(double_quotes, chars).
 
+%%%%%%%%%%
+% Parsing
 
 parse(Chars, Template) :-
     last(Chars, '\n'),
@@ -13,7 +15,7 @@ parse(Chars, Template) :-
 
 template(Template) --> element(0,Template).
 
-tagname(N) --> string_without(" .#(=\n", Cs), { atom_chars(N, Cs), length(Cs,Len), Len > 0 }.
+tagname(N) --> string_without(" .#(=\n|", Cs), { atom_chars(N, Cs), length(Cs,Len), Len > 0 }.
 
 varname(N) --> [FirstChar], { char_type(FirstChar, csymf) }, varname_(Cs), { atom_chars(N, [FirstChar|Cs]) }.
 varname_([]) --> [].
@@ -24,7 +26,7 @@ ws --> (" "|"\t"), ws.
 ws --> [].
 
 % At least one whitespace
-ws1 --> [W], { char_type(W, space) }, ws.
+ws1 --> (" "|"\t"), ws.
 
 nl --> [C], { char_type(C, end_of_line) }.
 
@@ -64,9 +66,9 @@ id_and_class_attrs(Attrs) --> idattr(Attrs).
 id_and_class_attrs(Attrs) --> classattr(Attrs).
 id_and_class_attrs(Attrs) --> idattr(IdAttrs), classattr(ClassAttrs), { append(IdAttrs, ClassAttrs, Attrs) }.
 
-idattr([id-Id]) --> "#", tagname(Val), { atom_chars(Val, Id) }.
+idattr([id-text(Id)]) --> "#", tagname(Val), { atom_chars(Val, Id) }.
 idattr([]) --> [].
-classattr([class-Class]) --> ".", classnames(Classnames), { combine_classnames(Classnames, Class) }.
+classattr([class-text(Class)]) --> ".", classnames(Classnames), { combine_classnames(Classnames, Class) }.
 classnames([Class|Classes]) --> tagname(Classname), { atom_chars(Classname, Class) }, more_classnames(Classes).
 more_classnames([]) --> [].
 more_classnames(Classes) --> ".", classnames(Classes).
@@ -81,34 +83,78 @@ spaces(N) --> " ", { N > 0, N1 is N - 1 }, spaces(N1).
 
 
 %%%%%%%%%%%%%%
+% HTML output
+
+render(ParsedTemplate) :- render(ParsedTemplate, {}).
+render(ParsedTemplate, Context) :-
+    phrase(html(ParsedTemplate), [Context], _).
+
+
+html(element(Tag,Attrs,Content)) -->
+    { write('<'), write(Tag) },
+    html_attrs(Attrs),
+    { write('>') },
+    html_content(Content),
+    { write('</'), write(Tag), write('>') }.
+
+html(text(Txt)) -->
+    % Output text as is (only text coming from outside template should be escaped)
+    { format('~s',[Txt]) }.
+
+html_attrs([]) --> [].
+html_attrs([Key-Val|Attrs]) -->
+    { write(' '), write(Key), write('="') },
+    html_attr_val(Val),
+    { write('"') },
+    html_attrs(Attrs).
+
+html_attr_val(text(Txt)) -->
+    { format('~s', [Txt]) }.
+
+html_content([]) --> [].
+html_content([C|Content]) -->
+    html(C),
+    html_content(Content).
+
+%%%%%%%%%%%%%%
 % Unit tests
 
 :- begin_tests(muggin).
 :- set_prolog_flag(double_quotes, chars).
 :- use_module(muggin).
 
-% Short hand for parsing element with attrs only
-pa(Chars, Tag, Attrs) :- parse(Chars, element(Tag, Attrs, [])).
-% Short hand for parsing element with content only
-pc(Chars, Tag, Content) :- parse(Chars, element(Tag, [], Content)).
-% Short hand for parsing element with attrs and content
-pac(Chars, Tag, Attrs, Content) :- parse(Chars, element(Tag, Attrs, Content)).
+% Define parse tests a p("template", element(...))
+p("div", element(div, [], [])).
 
-test(simple_element) :- pa("div", div, []).
+p("div#app\n",   element(div, [id-text("app")], [])).
+p("div.stylish", element(div, [class-text("stylish")], [])).
+p("div#x.a",     element(div, [id-text("x"),class-text("a")], [])).
+p("div.a.b.c",   element(div, [class-text("a b c")], [])).
 
-test(element_w_id) :- pa("div#app\n", div, [id-"app"]).
-test(element_w_class) :- pa("div.stylish", div, [class-"stylish"]).
-test(element_w_id_and_class) :- pa("div#x.a", div, [id-"x",class-"a"]).
-test(element_w_classes) :- pa("div.a.b.c", div, [class-"a b c"]).
+p("div\n  | this is my content\n", element(div,[],[text("this is my content")])).
+p("div\n  | stuff\n  ul\n    li",
+  element(div,[],[text("stuff"), element(ul, [], [element(li,[],[])])])).
+p("div with content", element(div,[],[text("with content")])).
+p("div#foo bar", element(div, [id-text("foo")], [text("bar")])).
 
-test(pipe_text) :- pc("div\n  | this is my content\n", div, [text("this is my content")]).
-test(pipe_text_and_elt) :- pc("div\n  | stuff\n  ul\n    li", div,
-                              [text("stuff"), element(ul, [], [element(li,[],[])])]).
-test(content_after) :- pc("div with content", div, [text("with content")]).
-test(id_and_content_after) :- pac("div#foo bar", div, [id-"foo"], [text("bar")]).
+p("div(onclick=\"alert('foo')\")", element(div, [onclick-text("alert('foo')")], [])).
+p("div(style=\"width:10vw;\" id=foo) hello",
+  element(div,
+          [style-text("width:10vw;"), id-var(foo)],
+          [text("hello")])).
 
-test(attrs1) :- pa("div(onclick=\"alert('foo')\")", div, [onclick-text("alert('foo')")]).
-test(attrs2) :- pac("div(style=\"width:10vw;\" id=foo) hello", div,
-                    [style-text("width:10vw;"), id-var(foo)],
-                    [text("hello")]).
+test(parsing, [forall(p(Chars, Tpl))]) :- parse(Chars, Tpl).
+
+% Define render tests as r(template, expectedhtml)
+r("div", "<div></div>").
+r("div#foo bar", "<div id=\"foo\">bar</div>").
+r("a.link(href=\"http://example.com\") click here", "<a class=\"link\" href=\"http://example.com\">click here</a>").
+r("p\n  | my story", "<p>my story</p>").
+
+test(render, [ forall(r(Tpl, Html)) ]) :-
+    parse(Tpl, T),
+    with_output_to(string(Str), render(T)),
+    string_codes(Str, Html).
+
+
 :- end_tests(muggin).
