@@ -6,7 +6,7 @@ jobs:
     steps:
     - name: install swipl
       run: >
-        sudo add-apt-repository ppa:swi-prolog/stable
+        sudo apt-add-repository ppa:swi-prolog/stable
         sudo apt-get update
         sudo apt-get install swi-prolog
     - uses: actions/checkout@v2
