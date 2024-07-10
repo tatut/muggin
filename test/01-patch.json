@@ -1,0 +1,18 @@
+{nextid: 1,
+ items: []}
+--
+{items: %+{id: @nextid, label: "my new todo item", complete: false}, nextid: %+1}
+--
+{items: [{id: 1, complete: %not}]}
+--
+{items: %+{id: @nextid, label: "2nd todo item", complete: false}, nextid: %+1}
+--
+{items: %+{id: @nextid, label: "third todo item", complete: false}, nextid: %+1}
+--
+{items: [{id: 3, label: %="change label"}]}
+--
+{items: %exclude{complete: true}}
+--
+{nextid: 4,
+ items: [{id: 2, label: "2nd todo item", complete: false},
+         {id: 3, label: "change label", complete: false}]}
