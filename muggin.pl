@@ -1,25 +1,48 @@
 :- module(muggin, [parse/2, render/1, render/2]).
 :- use_module(library(dcg/basics)).
-:- set_prolog_flag(double_quotes, chars).
+:- use_module(state, [json//1]).
+:- set_prolog_flag(double_quotes, codes).
 
 %%%%%%%%%%
 % Parsing
 
-parse(Chars, Template) :-
-    last(Chars, '\n'),
-    phrase(template(Template), Chars), !.
-parse(Chars, Template) :-
-    \+ last(Chars, '\n'),
-    append(Chars, "\n", CharsNl),
-    parse(CharsNl, Template).
+parse_error(Codes) :-
+    \+ phrase(template(_), Codes, []),
+    aggregate_all(min(Len, Rest),
+                  (phrase(template(_), Codes, Rest), length(Rest, Len)),
+                  min(_, MinRest)),
+    string_codes(RestStr, MinRest),
+    throw(template_syntax_error(at(RestStr))).
+
+parse(Codes, _) :-
+    last(Codes, 10),
+    phrase(template(_), Codes, Rest),
+    length(Rest, Len),
+    Len > 0,
+    parse_error(Codes).
+
+parse(Codes, Template) :-
+    last(Codes, 10),
+    phrase(template(Template), Codes), !.
+parse(Codes, Template) :-
+    \+ last(Codes, 10),
+    append(Codes, "\n", CodesNl),
+    parse(CodesNl, Template).
+parse_string(String, Template) :-
+    string(String),
+    string_codes(String, Codes),
+    parse(Codes, Template).
+parse_file(File, Template) :-
+    read_file_to_codes(File, Codes,[]),
+    parse(Codes, Template).
 
 template(Template) --> element(0,Template).
 
-tagname(N) --> string_without(" .#(=\n|<>&", Cs), { atom_chars(N, Cs), length(Cs,Len), Len > 0 }.
+tagname(N) --> string_without(" .#(=\n\t|<>&:", Cs), { atom_codes(N, Cs), length(Cs,Len), Len > 0 }.
 
-varname(N) --> [FirstChar], { char_type(FirstChar, csymf) }, varname_(Cs), { atom_chars(N, [FirstChar|Cs]) }.
+varname(N) --> [FirstChar], { code_type(FirstChar, csymf) }, varname_(Cs), { atom_codes(N, [FirstChar|Cs]) }.
 varname_([]) --> [].
-varname_([C|Cs]) --> [C], { char_type(C, csym) }, varname_(Cs).
+varname_([C|Cs]) --> [C], { code_type(C, csym) }, varname_(Cs).
 
 % Whitespace that is only space or tab
 ws --> (" "|"\t"), ws.
@@ -35,6 +58,9 @@ attributes([Attr|Attrs]) --> attribute(Attr), more_attributes(Attrs).
 more_attributes([]) --> ws.
 more_attributes(Attrs) --> ws, attributes(Attrs).
 attribute(Name-Value) --> tagname(Name), "=", expr(Value).
+attribute(NameSpace-Name-Value) --> tagname(NameSpace), ":", tagname(Name), "=",
+                                    ns_attribute_value(NameSpace, Value).
+ns_attribute_value(state, Value) --> json(Value).
 
 expr(text(Value)) --> "\"", string_without("\"", Value), "\"".
 expr(var(Name)) --> varname(Name).
@@ -48,6 +74,7 @@ element(Ind,element(Name,AllAttrs,Content)) -->
 
 content(_, []) --> ws.
 content(_, [text(Txt)]) --> ws1, string_without("\n", Txt), nl.
+content(_, [var(Var)]) --> "=", ws, varname(Var), nl.
 content(Ind, Children) -->
     ws, nl,
     { Ind1 is Ind + 2 },
@@ -61,15 +88,18 @@ children(Ind,[Child|Children]) -->
 
 child(Ind, Child) --> element(Ind, Child).
 child(Ind, text(Txt)) --> spaces(Ind), "|", ws, string_without("\n", Txt), nl.
-
+child(Ind, each(Goal, Vars, Children)) --> spaces(Ind), "@each", ws, string_without("\n", GoalCs), nl,
+                                           { read_term_from_codes(GoalCs, Goal, [variable_names(Vars)]),
+                                             Ind1 is Ind + 2 },
+                                           children(Ind1, Children).
 id_and_class_attrs(Attrs) --> idattr(Attrs).
 id_and_class_attrs(Attrs) --> classattr(Attrs).
 id_and_class_attrs(Attrs) --> idattr(IdAttrs), classattr(ClassAttrs), { append(IdAttrs, ClassAttrs, Attrs) }.
 
-idattr([id-text(Id)]) --> "#", tagname(Val), { atom_chars(Val, Id) }.
+idattr([id-text(Id)]) --> "#", tagname(Val), { atom_codes(Val, Id) }.
 idattr([]) --> [].
 classattr([class-text(Class)]) --> ".", classnames(Classnames), { combine_classnames(Classnames, Class) }.
-classnames([Class|Classes]) --> tagname(Classname), { atom_chars(Classname, Class) }, more_classnames(Classes).
+classnames([Class|Classes]) --> tagname(Classname), { atom_codes(Classname, Class) }, more_classnames(Classes).
 more_classnames([]) --> [].
 more_classnames(Classes) --> ".", classnames(Classes).
 combine_classnames([C], C).
@@ -89,6 +119,9 @@ render(ParsedTemplate) :- render(ParsedTemplate, {}).
 render(ParsedTemplate, Context) :-
     phrase(html(ParsedTemplate), [Context], _).
 
+% Basic DCG state nonterminals
+state(S), [S] --> [S].
+state(S0, S), [S] --> [S0].
 
 html(element(Tag,Attrs,Content)) -->
     { write('<'), write(Tag) },
@@ -100,6 +133,12 @@ html(element(Tag,Attrs,Content)) -->
 html(text(Txt)) -->
     % Output text as is (only text coming from outside template should be escaped)
     { format('~s',[Txt]) }.
+
+html(var(V)) -->
+    % FIXME: escape this
+    state(Ctx),
+    { get_dict(V, Ctx, Chars),
+      format('~s', [Chars]) }.
 
 html_attrs([]) --> [].
 html_attrs([Key-Val|Attrs]) -->
@@ -120,8 +159,9 @@ html_content([C|Content]) -->
 % Unit tests
 
 :- begin_tests(muggin).
-:- set_prolog_flag(double_quotes, chars).
+:- set_prolog_flag(double_quotes, codes).
 :- use_module(muggin).
+
 
 % Define parse tests a p("template", element(...))
 p("div", element(div, [], [])).
@@ -142,8 +182,9 @@ p("div(style=\"width:10vw;\" id=foo) hello",
   element(div,
           [style-text("width:10vw;"), id-var(foo)],
           [text("hello")])).
+p("title= foo", element(title, [], [var(foo)])).
 
-test(parsing, [forall(p(Chars, Tpl))]) :- parse(Chars, Tpl).
+test(parsing, [forall(p(Codes, Tpl))]) :- parse(Codes, Tpl).
 
 % Define render tests as r(template, expectedhtml)
 r("div", "<div></div>").
