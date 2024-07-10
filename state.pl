@@ -1,4 +1,4 @@
-:- module(state, [json//1, parse/2, render/2]).
+:- module(state, [json//1, parse/2]).
 :- use_module(library(dcg/basics)).
 :- set_prolog_flag(double_quotes, codes).
 
@@ -143,7 +143,7 @@ method(words, Str, [], List) :- split_string(Str, " \t\n", " \t\n", List).
 method(interpolate, Args, [Pattern], Out) :-
     interpolate("", Pattern, Args, Out).
 
-interpolate(Acc, Pattern, Args, Out) :-
+interpolate(Acc, Pattern, _Args, Out) :-
     \+ re_match("^(.*?){(\\d+)}(.*)$", Pattern),
     string_concat(Acc, Pattern, Out).
 interpolate(Acc, Pattern, Args, Out) :-
@@ -213,14 +213,16 @@ example(File) :-
     read_file_to_codes(File, Codes, []),
     split_examples(Codes, Examples),
     maplist([Codes,Str]>>string_codes(Str, Codes), Examples, Strs),
-    %writeln(examples(Strs)),
+    writeln(examples(Strs)),
     maplist(state:parse, Examples, JSONs),
     append([[InitialState], Patches, [FinalState]], JSONs),
     %writeln(log(initial(InitialState), patches(Patches), final(FinalState))),
-    foldl([Patch,Current,Next]>>(state:resolve_and_patch(Current, Patch, Next)), Patches, InitialState, FinalState).
+    foldl([Patch,Current,Next]>>(state:resolve_and_patch(Current, Patch, Next)), Patches, InitialState, Final),
+    writeln(final(Final)),
+    FinalState = Final.
 
 
-test(patch1) :- example("test/01-patch.json").
+test(patch1) :- once(example("test/01-patch.json")).
 
 
 
