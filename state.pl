@@ -211,15 +211,9 @@ split_examples(Codes, [Codes]) :-
 example(File) :-
     read_file_to_codes(File, Codes, []),
     split_examples(Codes, Examples),
-    maplist([Codes,Str]>>string_codes(Str, Codes), Examples, Strs),
-    writeln(examples(Strs)),
     maplist(state:parse, Examples, JSONs),
     append([[InitialState], Patches, [FinalState]], JSONs),
-    %writeln(log(initial(InitialState), patches(Patches), final(FinalState))),
-    foldl([Patch,Current,Next]>>(state:resolve_and_patch(Current, Patch, Next)), Patches, InitialState, Final),
-    writeln(final(Final)),
-    FinalState = Final.
-
+    foldl([Patch,Current,Next]>>(state:resolve_and_patch(Current, Patch, Next)), Patches, InitialState, FinalState).
 
 test(patch1) :- once(example("test/01-patch.json")).
 
