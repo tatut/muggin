@@ -11,4 +11,4 @@ jobs:
         sudo apt-get install swi-prolog
     - uses: actions/checkout@v2
     - name: run tests
-      run: swipl -t "run_tests(muggin)." muggin.pl
+      run: for f in *.pl; do swipl -g run_tests -t halt $f; done
