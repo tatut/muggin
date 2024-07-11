@@ -166,7 +166,6 @@ resolve_and_patch(Current, Patch, Result) :-
 % Unit tests
 
 :- begin_tests(state).
-:- use_module(state).
 
 % Basic parsing
 p("{}", json{}).
