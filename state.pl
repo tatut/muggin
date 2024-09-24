@@ -1,5 +1,6 @@
 :- module(state, [json//1, parse/2]).
 :- use_module(library(dcg/basics)).
+:- use_module(library(yall)).
 :- set_prolog_flag(double_quotes, codes).
 
 %%% State namespace
@@ -38,7 +39,12 @@ json(Dict) --> "{", json_keyvals(KVs), "}", { dict_pairs(Dict, json, KVs) }.
 json(Str) --> "\"", string_without("\"", StrCs), "\"", { string_codes(Str, StrCs) }.
 json(op(Op,Arg)) --> "%", json_binary_op(Op), json(Arg).
 json(op(Op)) --> "%", json_unary_op(Op).
+
+% Reference to the current state
 json(ref(Path,Methods)) --> "@", string_without(". \n\t\"{}[](),", Cs), { atom_codes(Path, Cs) }, ref_methods(Methods).
+
+% Reference to a client environment context (like current input's value)
+json(cref(Path,Methods)) --> "$", string_without(". \n\t\"{}[](),", Cs), { atom_codes(Path, Cs) }, ref_methods(Methods).
 ref_methods([]) --> ws.
 ref_methods([method(M,Args)|Methods]) --> ".", string_without(". \n\t\"{}[](),", Cs), { atom_codes(M, Cs) },
                                           ref_method_args(Args), ref_methods(Methods).
@@ -96,7 +102,6 @@ patch(Dict, Patch, Result) :-
 patch_items(PatchRules, Item, Item) :- \+ matching_patch_rule(PatchRules, Item, _).
 patch_items(PatchRules, ItemIn, ItemOut) :-
     once(matching_patch_rule(PatchRules, ItemIn, PatchRule)),
-    writeln(matching_rule(PatchRule)),
     patch(ItemIn, PatchRule, ItemOut).
 
 matching_patch_rule(Rules, Dict, Rule) :-
@@ -216,7 +221,6 @@ example(File) :-
     foldl([Patch,Current,Next]>>(state:resolve_and_patch(Current, Patch, Next)), Patches, InitialState, FinalState).
 
 test(patch1) :- once(example("test/01-patch.json")).
-
 
 
 :- end_tests(state).

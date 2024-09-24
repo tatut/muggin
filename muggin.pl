@@ -56,7 +56,7 @@ nl --> [C], { char_type(C, end_of_line) }.
 
 attributes([Attr|Attrs]) --> attribute(Attr), more_attributes(Attrs).
 more_attributes([]) --> ws.
-more_attributes(Attrs) --> ws, attributes(Attrs).
+more_attributes(Attrs) --> ws, ",", ws, attributes(Attrs).
 attribute(Name-Value) --> tagname(Name), "=", expr(Value).
 attribute(NameSpace-Name-Value) --> tagname(NameSpace), ":", tagname(Name), "=",
                                     ns_attribute_value(NameSpace, Value).
