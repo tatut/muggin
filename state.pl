@@ -116,9 +116,15 @@ is_op(X) :- compound(X), compound_name_arguments(X, op, _).
 
 %% Resolve references, this is done before patching
 % Env is a dict of bindings
+% For client references (cref, eg. $foo), the
+% dict must contain a sub dict in the key '__client'
 
 resolve(Env, ref(Key,Methods), Resolved) :-
     get_dict(Key, Env, Value),
+    eval_methods(Env, Value, Methods, Resolved).
+
+resolve(Env, cref(Key,Methods), Resolved) :-
+    get_dict(Key, Env.'__client', Value),
     eval_methods(Env, Value, Methods, Resolved).
 
 resolve(Env, ItemsIn, ItemsOut) :-
@@ -150,6 +156,9 @@ method(interpolate, Args, [Pattern], Out) :-
     interpolate("", Pattern, Args, Out).
 method(include, List, [Like], Out) :-
     include(matching_dict(Like), List, Out).
+method(length, List, [], Len) :- length(List, Len).
+method(pluralize, 1, [Single, _], Single).
+method(pluralize, N, [_, Plural], Plural) :- \+ N=1.
 
 interpolate(Acc, Pattern, _Args, Out) :-
     \+ re_match("^(.*?){(\\d+)}(.*)$", Pattern),
