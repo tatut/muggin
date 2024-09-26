@@ -36,6 +36,8 @@ parse_file(File, Template) :-
     read_file_to_codes(File, Codes,[]),
     parse(Codes, Template).
 
+
+
 template(Template) --> element(0,Template).
 
 tagname(N) --> string_without(" .#(=\n\t|<>&:", Cs), { atom_codes(N, Cs), length(Cs,Len), Len > 0 }.
@@ -66,19 +68,27 @@ expr(text(Value)) --> "\"", string_without("\"", Value), "\"".
 expr(var(Name)) --> varname(Name).
 
 element(Ind,element(Name,Attrs,Content)) -->
-    spaces(Ind), tagname(Name), id_and_class_attrs(Attrs), content(Ind,Content).
+    spaces(Ind), tagname(Name), id_and_class_attrs(Attrs), contents(Ind,Content).
 element(Ind,element(Name,AllAttrs,Content)) -->
     spaces(Ind), tagname(Name), id_and_class_attrs(IdClassAttrs),
     "(", attributes(Attrs), ")",
-    { append(IdClassAttrs, Attrs, AllAttrs) }, content(Ind, Content).
+    { append(IdClassAttrs, Attrs, AllAttrs) }, contents(Ind, Content).
 
-content(_, []) --> ws.
-content(_, [text(Txt)]) --> ws1, string_without("\n", Txt), nl.
-content(_, [var(Var)]) --> "=", ws, varname(Var), nl.
-content(Ind, Children) -->
-    ws, nl,
+contents(Ind, All) --> inline_content(Inline), nested_content(Ind, Nested),
+                       { append(Inline, Nested, All) }.
+inline_content([]) --> ws, nl.
+inline_content([text(Txt)]) --> ws1, string_without("\n", Txt), nl.
+inline_content([var(Var)]) --> "=", ws, varname(Var), nl.
+%%content(_, [state(State)]) --> "=", ws, json(State). % allow multiple space separated
+inline_content(States) --> "=", state_contents(States).
+nested_content(Ind, Children) -->
     { Ind1 is Ind + 2 },
     children(Ind1, Children).
+
+% Allow multiple ws separated json states as content
+state_contents([St|States]) --> ws, json(St), more_state_contents(States).
+more_state_contents([]) --> ws, "\n".
+more_state_contents(States) --> state_contents(States).
 
 % Children of an element are elements at an increased indentation level
 children(_,[]) --> [].
@@ -137,8 +147,10 @@ html(text(Txt)) -->
 html(var(V)) -->
     % FIXME: escape this
     state(Ctx),
-    { get_dict(V, Ctx, Chars),
-      format('~s', [Chars]) }.
+    { %get_dict(V, Ctx, Chars),
+        %format('~s', [Chars])
+        format('~s', [V])
+    }.
 
 html_attrs([]) --> [].
 html_attrs([Key-Val|Attrs]) -->
@@ -175,14 +187,18 @@ p("div\n  | this is my content\n", element(div,[],[text("this is my content")]))
 p("div\n  | stuff\n  ul\n    li",
   element(div,[],[text("stuff"), element(ul, [], [element(li,[],[])])])).
 p("div with content", element(div,[],[text("with content")])).
+p("div text\n  a(href=\"foo\") and link",
+  element(div,[],[text("text"),
+                  element(a,[href-text("foo")],[text("and link")])])).
 p("div#foo bar", element(div, [id-text("foo")], [text("bar")])).
 
 p("div(onclick=\"alert('foo')\")", element(div, [onclick-text("alert('foo')")], [])).
-p("div(style=\"width:10vw;\" id=foo) hello",
+p("div(style=\"width:10vw;\", id=foo) hello",
   element(div,
           [style-text("width:10vw;"), id-var(foo)],
           [text("hello")])).
 p("title= foo", element(title, [], [var(foo)])).
+p("title= @title", element(title, [], [state(ref(title,[]))])).
 
 test(parsing, [forall(p(Codes, Tpl))]) :- parse(Codes, Tpl).
 
