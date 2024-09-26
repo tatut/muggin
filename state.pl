@@ -119,7 +119,7 @@ is_op(X) :- compound(X), compound_name_arguments(X, op, _).
 
 resolve(Env, ref(Key,Methods), Resolved) :-
     get_dict(Key, Env, Value),
-    eval_methods(Value, Methods, Resolved).
+    eval_methods(Env, Value, Methods, Resolved).
 
 resolve(Env, ItemsIn, ItemsOut) :-
     is_list(ItemsIn),
@@ -139,14 +139,17 @@ resolve(_, false, false).
 resolve(_, null, null).
 resolve(_, op(X), op(X)).
 
-eval_methods(X, [], X).
-eval_methods(In, [method(Name, Args)|Methods], Out) :-
+eval_methods(_, X, [], X).
+eval_methods(Env, In, [method(Name, ArgsIn)|Methods], Out) :-
+    maplist(resolve(Env), ArgsIn, Args),
     method(Name, In, Args, Intermediate),
-    eval_methods(Intermediate, Methods, Out).
+    eval_methods(Env,Intermediate, Methods, Out).
 
 method(words, Str, [], List) :- split_string(Str, " \t\n", " \t\n", List).
 method(interpolate, Args, [Pattern], Out) :-
     interpolate("", Pattern, Args, Out).
+method(include, List, [Like], Out) :-
+    include(matching_dict(Like), List, Out).
 
 interpolate(Acc, Pattern, _Args, Out) :-
     \+ re_match("^(.*?){(\\d+)}(.*)$", Pattern),
