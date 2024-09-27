@@ -30,13 +30,18 @@ serve(post, File, Request) :-
     dbg(get_param(ClientMappings)),
     client_mappings(Params, ClientMappings, Client),
     current_state(session, State0),
-    state:resolve_and_patch(State0.put('__client', Client), Patch, State1),
+    dbg(client_mappings(Client, state0(State0), patch(Patch))),
+    state:resolve_and_patch(State0.put(['__client'=Client]), Patch, State1),
+    del_dict('__client', State1, _, State2),
+    dbg(state1(State2)),
     http_session_retractall(state(_)),
-    http_session_assert(state(State1)),
-    dbg(posting(File, params(Params), id(ID), patch(Patch), name(Name),
-               new_state(State1))),
+    http_session_retractall(patch(_,_,_)), % retract old patches before new render
+    http_session_assert(state(State2)),
+    dbg(posting(File, params(Params), id(ID), patch(Patch), new_state(State2))),
     template(File, Parsed),
-    serve_template(Request, Parsed).
+    % Only render the body for HTMX updates
+    path(Parsed, [html, body], Body),
+    serve_template(Request, Body).
 
 client_mappings(Form, Mappings, Client) :-
     foldl({Form,Mappings}/[RefName=FormName,M0,M1]>>(
@@ -44,7 +49,7 @@ client_mappings(Form, Mappings, Client) :-
               put_dict(RefName, M0, FormVal, M1)),
           Mappings, json{}, Client).
 
-serve_template(Request, Parsed) :-
+serve_template(_Request, Parsed) :-
     format('Content-Type: text/html~n~n'),
     http_open_session(Session, []),
     dbg(session(Session)),
@@ -129,13 +134,17 @@ html_attr(_,Name-Value) -->
     out(['"']).
 
 % Replace initial state with HTMX script loading
-html_attr(_,state-init-_) --> out([' src="https://unpkg.com/htmx.org@2.0.2"']).
+html_attr(_,state-init-_) --> out([' src="htmx-2.0.2.min.js"']). % "https://unpkg.com/htmx.org@2.0.2"
 
 % Record onchange event for input
 html_attr(E,state-patch-Val) -->
+    state(S),
     { gensym(patch, ID),
+      dbg(current_state_for_patch(S)),
+      % Partially resolve the patch, for any id references
+      state:resolve(S.put(['__partial'=true]), Val, Val1),
       patch_payload(E, Payload),
-      http_session_assert(patch(ID, Val, Payload))
+      http_session_assert(patch(ID, Val1, Payload))
     },
     out([' hx-post="" hx-vals=''{"_":"', ID, '"}'' " hx-target="body"']).
 
