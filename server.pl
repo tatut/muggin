@@ -7,15 +7,28 @@
 :- use_module(library(gensym)).
 :- use_module(library(yall)).
 :- http_handler(root(File), serve(Method,File), [method(Method), methods([get,post])]).
+:- dynamic template_loaded/3.
 
 start :-
     http_server(http_dispatch, [port(8000)]).
+
+load_time(File, Time) :-
+    template_loaded(File, Time,_) -> true; Time = 0.
 
 % Try to load and parse a .mug template by appending the name
 template(File, Parsed) :-
     atom_concat(File, '.mug', TemplateName),
     exists_file(TemplateName),
-    once(phrase_from_file(muggin:template(Parsed), TemplateName)).
+    time_file(TemplateName, ChangeTime),
+    load_time(TemplateName, LoadTime),
+    dbg(time(load(LoadTime), file(ChangeTime))),
+    (LoadTime >= ChangeTime
+    -> template_loaded(TemplateName, _, Parsed)
+    ; ( dbg(reloading(TemplateName)),
+        get_time(Now),
+        once(phrase_from_file(muggin:template(Parsed), TemplateName)),
+        retractall(template_loaded(TemplateName, _, _)),
+        asserta(template_loaded(TemplateName, Now, Parsed)) )).
 
 serve(get,File,Request) :-
     template(File, Parsed)
@@ -72,7 +85,8 @@ path(element(Tag,_,Content), [Tag,NextTag|Tags], Result) :-
     path(element(NextTag,A,C), [NextTag|Tags], Result).
 
 
-dbg(Thing) :- with_output_to(user_error, writeln(Thing)).
+%dbg(Thing) :- with_output_to(user_error, writeln(Thing)).
+dbg(_).
 
 % Find current state from session, or initialize a new one
 current_state(_Tpl, State) :-
@@ -98,25 +112,50 @@ ref(R, V) --> state(S),
                 %writeln(resolved(V))
               }.
 
+special_attr(when).
+special_attr(each).
+falsy(false).
+falsy(null).
+
+handle_when(true, E) --> html(E).
+handle_when(false, _) --> [].
+
+handle_special(when, Ref, E) -->
+    ref(Ref, Val),
+    { (falsy(Val) -> Cond=false; Cond=true) },
+    handle_when(Cond, E).
+
+handle_special(each, Ref, element(Tag,Attrs,Content)) -->
+    state(Saved),
+    out(['<', Tag]), html_attrs(element(Tag,Attrs,Content),Attrs), out(['>']),
+    ref(Ref, Items),
+    html(each(Saved, Items, Content)),
+    out(['</', Tag, '>']),
+    setstate(Saved).
+
+has_special_attr(Attrs) :-
+    special_attr(Special),
+    memberchk(state-Special-_, Attrs).
+
 html(element(Tag,Attrs,Content)) -->
-    { \+ member(state-each-_, Attrs) }, % No each, regular element
+    { \+ has_special_attr(Attrs) }, % No special, regular element
     out(['<', Tag]), html_attrs(element(Tag,Attrs,Content),Attrs), out(['>']),
     html_content(Content),
     out(['</', Tag, '>']).
 
 html(element(Tag,Attrs,Content)) -->
-    state(Saved),
-    { select(state-each-Ref, Attrs, Attrs1) },
-    out(['<', Tag]), html_attrs(element(Tag,Attrs,Content),Attrs1), out(['>']),
-    ref(Ref, Items),
-    html(each(Items, Content)),
-    setstate(Saved).
+    { special_attr(Special),
+      select(state-Special-Val, Attrs, Attrs1),
+      dbg(handle_special(Special, Val)),
+      ! },
+    handle_special(Special, Val, element(Tag,Attrs1,Content)).
 
-html(each([], _)) --> [].
-html(each([Item|Items], Content)) -->
-    setstate(Item),
+html(each(_,[],_)) --> [].
+html(each(S0,[Item|Items], Content)) -->
+    { dbg(mergin(S0,Item)), S1 = S0.put(Item) },
+    setstate(S1),
     html_content(Content),
-    html(each(Items,Content)).
+    html(each(S0,Items,Content)).
 
 html(text(Cs)) --> { string_codes(Str, Cs) }, out([Str]).
 html(S) --> { string(S) }, out([S]).
@@ -140,7 +179,7 @@ html_attr(_,state-init-_) --> out([' src="htmx-2.0.2.min.js"']). % "https://unpk
 html_attr(E,state-patch-Val) -->
     state(S),
     { gensym(patch, ID),
-      dbg(current_state_for_patch(S)),
+      %dbg(current_state_for_patch(S)),
       % Partially resolve the patch, for any id references
       state:resolve(S.put(['__partial'=true]), Val, Val1),
       patch_payload(E, Payload),
@@ -148,6 +187,7 @@ html_attr(E,state-patch-Val) -->
     },
     out([' hx-post="" hx-vals=''{"_":"', ID, '"}'' " hx-target="body"']).
 
+html_attr(_,state-on-Val) --> out([' hx-trigger="', Val, '"']).
 html_attr(_,state-checked-Ref) -->
     ref(Ref, Checked),
     checked(Checked).

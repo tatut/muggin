@@ -69,7 +69,9 @@ json_unary_op(not) --> "not". % negate boolean value
 
 parse_attribute(patch, JsonOp) --> json(JsonOp).
 
-matching_dict(Candidate, Dict) :- select_dict(Candidate, Dict, _).
+matching_dict(Candidate, Dict) :-
+    is_dict(Candidate), is_dict(Dict),
+    select_dict(Candidate, Dict, _).
 
 patch(_, op(=, Result), Result).
 patch(Num, op(+, Inc), Result) :-
@@ -169,6 +171,11 @@ method(include, List, [Like], Out) :-
 method(length, List, [], Len) :- length(List, Len).
 method(pluralize, 1, [Single, _], Single).
 method(pluralize, N, [_, Plural], Plural) :- \+ N=1.
+method(match, A, [B], Match) :- once(match(A,B)) -> Match = true; Match = false.
+method(is, A,[A], true).
+method(is, A,[B], false) :- dif(A,B).
+method(dif, A, [A], false).
+method(dif, A, [B], true) :- dif(A,B).
 
 % More convenient way to pluralize a message about list length
 method(count, [], [NoItems,_,_], NoItems).
@@ -177,7 +184,8 @@ method(count, Lst, [_,_,ManyItems], Message) :-
     length(Lst, Len), Len > 1,
     re_replace("#", Len, ManyItems, Message).
 
-
+match(A,A).
+match(M0,M1) :- matching_dict(M0,M1).
 
 interpolate(Acc, Pattern, _Args, Out) :-
     \+ re_match("^(.*?){(\\d+)}(.*)$", Pattern),

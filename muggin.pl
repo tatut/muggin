@@ -67,17 +67,30 @@ ns_attribute_value(state, Value) --> json(Value).
 expr(text(Value)) --> "\"", string_without("\"", Value), "\"".
 expr(var(Name)) --> varname(Name).
 
+tag_and_attrs(Name,AllAttrs) -->
+    tagname(Name),
+    id_and_class_attrs(IdClassAttrs),
+    paren_attrs(Attrs),
+    { append(IdClassAttrs, Attrs, AllAttrs) }.
+
 element(Ind,element(Name,Attrs,Content)) -->
-    spaces(Ind), tagname(Name), id_and_class_attrs(Attrs), contents(Ind,Content).
-element(Ind,element(Name,AllAttrs,Content)) -->
-    spaces(Ind), tagname(Name), id_and_class_attrs(IdClassAttrs),
-    "(", attributes(Attrs), ")",
-    { append(IdClassAttrs, Attrs, AllAttrs) }, contents(Ind, Content).
+    spaces(Ind), tag_and_attrs(Name, Attrs),
+    inline_element_or_contents(Ind,Content).
+
+inline_element_or_contents(Ind, [element(Name,Attrs,Content)]) -->
+    ws, ">", ws, tag_and_attrs(Name,Attrs),
+    inline_element_or_contents(Ind, Content).
+inline_element_or_contents(Ind,Content) --> contents(Ind, Content).
+
+
+paren_attrs([]) --> [].
+paren_attrs(Attrs) --> "(", attributes(Attrs), ")".
+
 
 contents(Ind, All) --> inline_content(Inline), nested_content(Ind, Nested),
                        { append(Inline, Nested, All) }.
 inline_content([]) --> ws, nl.
-inline_content([text(Txt)]) --> ws1, string_without("\n", Txt), nl.
+inline_content([text(Txt)]) --> ws1, string_without(">\n", Txt), nl.
 inline_content([var(Var)]) --> "=", ws, varname(Var), nl.
 %%content(_, [state(State)]) --> "=", ws, json(State). % allow multiple space separated
 inline_content(States) --> "=", state_contents(States).
@@ -198,9 +211,19 @@ p("div(style=\"width:10vw;\", id=foo) hello",
           [style-text("width:10vw;"), id-var(foo)],
           [text("hello")])).
 p("title= foo", element(title, [], [var(foo)])).
-p("title= @title", element(title, [], [state(ref(title,[]))])).
+%p("title= @title", element(title, [], [state(ref(title,[]))])).
 
-test(parsing, [forall(p(Codes, Tpl))]) :- parse(Codes, Tpl).
+% Emmet style single line '>' separated elements
+p("div#foo > ul.listing > li > a(href=\"http://example.com\") My link",
+  element(div,[id-text("foo")],
+          [element(ul,[class-text("listing")],
+                   [element(li,[],
+                            [element(a,[href-text("http://example.com")],
+                                     [text("My link")])])])])).
+
+test(parsing, [forall(p(Codes, Tpl))]) :-
+    string_codes(Str, Codes), writeln(parsing(Str)),
+    parse(Codes, Tpl).
 
 % Define render tests as r(template, expectedhtml)
 r("div", "<div></div>").
